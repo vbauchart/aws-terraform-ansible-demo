@@ -45,7 +45,7 @@ Pour injecter rapidement les bugs dans la branche `test-candidat`, appliquez les
 1. **Dans `terraform/instances.tf` :**
    - Introduire une faute de frappe sur une variable : remplacer `var.ami_image` par `var.ami_imge` sur l'instance `proxy`.
    - Casser la syntaxe HCL : supprimer l'accolade fermante `}` à la fin du bloc `resource "aws_instance" "db"`.
-   - Casser la référence à la ressource : remplacer `iam_instance_profile = aws_iam_instance_profile.ssm_profile.name` par `iam_instance_profile = aws_iam_instance_profile.ssm_profile.profile_name` (attribut inexistant).
+   - Casser la référence à la ressource : remplacer `key_name = aws_key_pair.wp_key.key_name` par `key_name = aws_key_pair.wp_key.name` (attribut inexistant).
 
 2. **Dans `terraform/vpc.tf` :**
    - **Bug réseau sortant (NAT)** : Dans la table de routage privée `aws_default_route_table.private`, supprimer la route vers la passerelle NAT ou mettre `cidr_block = "10.0.0.0/8"` au lieu de `"0.0.0.0/0"`. (Empêche `dnf` de télécharger les paquets sur web et db).
@@ -147,10 +147,10 @@ terraform validate
 2. **Variable mal orthographiée (`var.ami_imge`)** :
    - *Erreur levée :* `Error: Reference to undeclared input variable: An input variable with the name "ami_imge" has not been declared. Did you mean "ami_image"?`
    - *Correction :* Remplacer par `var.ami_image`.
-3. **Attribut invalide sur ressource (`aws_iam_instance_profile.ssm_profile.profile_name`)** :
-   - *Erreur levée :* `This object has no argument, nested block, or exported attribute named "profile_name". Did you mean "name"?`
-   - *Correction :* Utiliser `aws_iam_instance_profile.ssm_profile.name`.
-4. **Attribut déprécié dans AWS Provider v5 (`aws_eip.vpc = true`)** :
+3. **Attribut invalide sur ressource (`aws_key_pair.wp_key.name`)** :
+   - *Erreur levée :* `This object has no argument, nested block, or exported attribute named "name". Did you mean "key_name"?`
+   - *Correction :* Utiliser `aws_key_pair.wp_key.key_name`.
+4. **Attribut déprécié dans AWS Provider v5/v6 (`aws_eip.vpc = true`)** :
    - *Erreur levée :* `Argument is deprecated: use domain instead`.
    - *Correction :* Remplacer par `domain = "vpc"` ou supprimer l'EIP inutile.
 
@@ -229,6 +229,21 @@ Le candidat doit ajouter des blocs `moved` dans son code (dans `main.tf` ou `mov
 # moved.tf
 
 moved {
+  from = tls_private_key.ssh
+  to   = module.compute.tls_private_key.ssh
+}
+
+moved {
+  from = aws_key_pair.wp_key
+  to   = module.compute.aws_key_pair.wp_key
+}
+
+moved {
+  from = local_file.ssh_private_key
+  to   = module.compute.local_file.ssh_private_key
+}
+
+moved {
   from = aws_instance.proxy
   to   = module.compute.aws_instance.proxy
 }
@@ -241,16 +256,6 @@ moved {
 moved {
   from = aws_instance.db
   to   = module.compute.aws_instance.db
-}
-
-moved {
-  from = aws_iam_role.ssm_role
-  to   = module.compute.aws_iam_role.ssm_role
-}
-
-moved {
-  from = aws_iam_instance_profile.ssm_profile
-  to   = module.compute.aws_iam_instance_profile.ssm_profile
 }
 
 moved {

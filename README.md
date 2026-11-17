@@ -7,10 +7,11 @@ Terraform + Ansible deployment for WordPress server on AWS EC2 instances
 AmazonEC2FullAccess
 AmazonVPCFullAccess
 AmazonElasticFileSystemFullAccess
-IAMFullAccess (pour le profil d'instance SSM)
 ```
-2) **Zero Clé SSH (AWS SSM Session Manager) :**
-   Aucune clé SSH n'est nécessaire ! L'infrastructure utilise l'AMI officielle **Amazon Linux 2023** (`ami-0f00e1cf9df80b6ac` en `eu-west-3`) avec l'agent AWS Systems Manager (SSM) préinstallé et le rôle IAM `AmazonSSMManagedInstanceCore`. Le port 22 est totalement fermé.
+2) **Zero Clé SSH manuelle & Port 22 fermé à Internet (EC2 Instance Connect Endpoint) :**
+   - Aucune génération manuelle de clé SSH n'est nécessaire ! Terraform génère automatiquement une paire de clés via le provider TLS pour Ansible.
+   - Le port 22 est **totalement fermé à Internet** (`0.0.0.0/0`). L'accès SSH s'effectue exclusivement via un **EC2 Instance Connect Endpoint (EICE)** managé par AWS, **100% gratuit** et directement routé sur le backbone AWS privé.
+   - Les instances privées n'ont pas besoin d'accès Internet pour être administrées (aucune dépendance au NAT pour la connexion).
 
 3) Apply terraform deployment
    1) Open terraform dir
@@ -20,26 +21,26 @@ IAMFullAccess (pour le profil d'instance SSM)
    `terraform apply`
 
 4) Provide ansible configurations
-   1) Install ansible requirements (incluant `community.aws` pour la connexion SSM)
+   1) Install ansible requirements
 
    `$ ansible-galaxy collection install -r requirements.yml`
    
    2) Open directory with ansible configurations (`cd ../ansible`)
-   3) Check that `inventory.ini` file exists (généré automatiquement par Terraform avec les IDs d'instances et `ansible_connection = aws_ssm`)
+   3) Check that `inventory.ini` file exists (généré automatiquement par Terraform avec les commandes de tunnel EICE)
    4) Execute ansible playbook with vault password `ansible`
 
    `$ ansible-playbook --ask-vault-password playbook.yml`
 
-5) Se connecter aux instances en ligne de commande (sans clé SSH) :
+5) Se connecter aux instances en ligne de commande (100% sans clé avec AWS CLI) :
    ```bash
-   aws ssm start-session --target <INSTANCE_ID>
+   aws ec2-instance-connect ssh --instance-id <INSTANCE_ID> --connection-type eice
    ```
 
 ## Requirements
 0) Using Terraform create simple AWS resources (EC2 instances within custom VPC) for this deployment.
 1) Using Ansible create an automated provision scenario, which deploys a highly available WordPress website.
 2) Stack is - MariaDB/MySQL on a separate server, application backend(s), and Traefik as a proxy server.
-3) It should be run on Amazon Linux 2023, using security best practices and AWS Systems Manager (SSM).
+3) It should be run on Amazon Linux 2023, using security best practices and EC2 Instance Connect Endpoint (EICE).
 4) Avoid vendor lock-ins and be sure the scenario is flexible for deployment to any cloud provider.
 5) Keep used secrets in the repository in a secure way.
 6) Make sure your README tells us how to run it.
@@ -51,6 +52,7 @@ Cloud Architecture due to Requirement #2
 
 ## Optimisations FinOps & Free Tier (Zéro surcoût)
 Cette infrastructure a été optimisée pour minimiser les coûts sur AWS et fonctionner au maximum dans le cadre du **AWS Free Tier** :
+- **EC2 Instance Connect Endpoint (EICE) 100% Gratuit (0,00 €)** : Permet d'administrer toutes les instances (publiques et privées) via le réseau privé AWS sans exposer le port 22 à Internet, sans bastion payant et sans aucun coût horaire.
 - **Suppression du NAT Gateway AWS managé** (~32 $/mois) et de son **Elastic IP** (~3,65 $/mois) : Le serveur `proxy` (Traefik) situé dans le subnet public assure directement le rôle de passerelle NAT économe (`iptables MASQUERADE` et `source_dest_check = false`) pour permettre aux instances privées d'installer les paquets sans surcoût.
 - **Support IPv6 100% gratuit** : Le VPC active un bloc IPv6 avec une passerelle *Egress-Only Internet Gateway* (EIGW) gratuite pour la sortie Internet des instances privées.
 - **Facturation des adresses IPv4 (MàJ AWS Fév 2024)** : Aucune Elastic IP persistante n'est conservée. L'IP publique du proxy est éphémère (auto-assignée) et ne génère aucun coût lorsqu'elle est libérée à l'arrêt ou à la destruction de l'infrastructure (`terraform destroy`).

@@ -103,10 +103,49 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.wordpress_private.id
 }
 
-# Security Groups - Zero open SSH port 22! Access is managed via AWS SSM Session Manager.
+# ==============================================================================
+# EC2 Instance Connect Endpoint (EICE) - 100% GRATUIT (0,00 €)
+# Connect to private EC2 instances over the AWS backbone without opening port 22
+# to the internet, without public IPs, and without any NAT Gateway dependency!
+# ==============================================================================
+
+resource "aws_security_group" "eice" {
+  name        = "wordpress_eice_sg"
+  description = "Security group for EC2 Instance Connect Endpoint"
+  vpc_id      = aws_vpc.wordpress.id
+
+  # EICE requires NO inbound rules. Connections originate from AWS control plane.
+
+  # Outbound SSH rule targeting all VPC instances on port 22
+  egress {
+    description = "Allow outbound SSH to instances in VPC"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.wordpress.cidr_block]
+  }
+
+  tags = {
+    Name = "wordpress_eice_sg"
+  }
+}
+
+resource "aws_ec2_instance_connect_endpoint" "eice" {
+  subnet_id          = aws_subnet.wordpress_private.id
+  security_group_ids = [aws_security_group.eice.id]
+
+  tags = {
+    Name = "wordpress_eice"
+  }
+}
+
+# ==============================================================================
+# Security Groups - Port 22 is strictly restricted to EICE (Zero 0.0.0.0/0 SSH!)
+# ==============================================================================
+
 resource "aws_security_group" "wordpress_public" {
   name        = "wordpress_public"
-  description = "Allow HTTP inbound traffic + NAT forwarding (No SSH needed, managed via SSM)"
+  description = "Allow HTTP from world, SSH from EICE only, and NAT forwarding"
   vpc_id      = aws_vpc.wordpress.id
 
   ingress {
@@ -115,6 +154,15 @@ resource "aws_security_group" "wordpress_public" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH strictly restricted to EC2 Instance Connect Endpoint
+  ingress {
+    description     = "SSH from EC2 Instance Connect Endpoint only"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eice.id]
   }
 
   # Allow NAT forwarding traffic originating from private subnet
@@ -127,7 +175,7 @@ resource "aws_security_group" "wordpress_public" {
   }
 
   egress {
-    description = "Outbound to world (Required for SSM and package downloads)"
+    description = "Outbound to world"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -141,7 +189,7 @@ resource "aws_security_group" "wordpress_public" {
 
 resource "aws_security_group" "wordpress_web" {
   name        = "wordpress_web"
-  description = "Allow HTTP traffic from proxy (No SSH needed, managed via SSM)"
+  description = "Allow HTTP from proxy and SSH from EICE only"
   vpc_id      = aws_vpc.wordpress.id
 
   ingress {
@@ -152,8 +200,17 @@ resource "aws_security_group" "wordpress_web" {
     security_groups = [aws_security_group.wordpress_public.id]
   }
 
+  # SSH strictly restricted to EC2 Instance Connect Endpoint
+  ingress {
+    description     = "SSH from EC2 Instance Connect Endpoint only"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eice.id]
+  }
+
   egress {
-    description = "Outbound to world via NAT (Required for SSM and package downloads)"
+    description = "Outbound to world via NAT"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -167,7 +224,7 @@ resource "aws_security_group" "wordpress_web" {
 
 resource "aws_security_group" "wordpress_db" {
   name        = "wordpress_db"
-  description = "Allow DB traffic from web instances (No SSH needed, managed via SSM)"
+  description = "Allow DB traffic from web instances and SSH from EICE only"
   vpc_id      = aws_vpc.wordpress.id
 
   ingress {
@@ -178,8 +235,17 @@ resource "aws_security_group" "wordpress_db" {
     security_groups = [aws_security_group.wordpress_web.id]
   }
 
+  # SSH strictly restricted to EC2 Instance Connect Endpoint
+  ingress {
+    description     = "SSH from EC2 Instance Connect Endpoint only"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eice.id]
+  }
+
   egress {
-    description = "Outbound to world via NAT (Required for SSM and package downloads)"
+    description = "Outbound to world via NAT"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"

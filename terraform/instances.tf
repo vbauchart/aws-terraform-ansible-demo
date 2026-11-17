@@ -1,34 +1,19 @@
-# IAM Role & Instance Profile for AWS Systems Manager (SSM)
-# Allows secure access to EC2 instances without SSH keys or open port 22
-resource "aws_iam_role" "ssm_role" {
-  name = "wordpress_ssm_role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Name = "wordpress_ssm_role"
-  }
+# Automated SSH Key Pair for Ansible & EICE tunneling
+# Generated automatically by Terraform: zero manual ssh-keygen required!
+resource "tls_private_key" "ssh" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
 }
 
-resource "aws_iam_role_policy_attachment" "ssm_policy" {
-  role       = aws_iam_role.ssm_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+resource "aws_key_pair" "wp_key" {
+  key_name   = "wordpress_key"
+  public_key = tls_private_key.ssh.public_key_openssh
 }
 
-resource "aws_iam_instance_profile" "ssm_profile" {
-  name = "wordpress_ssm_instance_profile"
-  role = aws_iam_role.ssm_role.name
+resource "local_file" "ssh_private_key" {
+  filename        = "${path.module}/../ansible/id_rsa_eice"
+  file_permission = "0600"
+  content         = tls_private_key.ssh.private_key_pem
 }
 
 # EFS Single AZ (Free Tier: 5 GB/month)
@@ -53,16 +38,16 @@ resource "aws_efs_mount_target" "private_subnet" {
 }
 
 # EC2 Instances (Free Tier: 750h/month total for t2.micro or t3.micro)
-# Using Amazon Linux 2023 with pre-installed and activated SSM Agent
+# Using Amazon Linux 2023 with pre-installed EC2 Instance Connect service
 
 # Proxy / Bastion / NAT Instance
 # Acts as reverse proxy (Traefik) AND provides free NAT forwarding for private instances,
 # completely eliminating the costly AWS NAT Gateway ($32+/month).
 resource "aws_instance" "proxy" {
-  ami                  = var.ami_image
-  instance_type        = var.instance_type
-  iam_instance_profile = aws_iam_instance_profile.ssm_profile.name
-  subnet_id            = aws_subnet.wordpress_public.id
+  ami                    = var.ami_image
+  instance_type          = var.instance_type
+  key_name               = aws_key_pair.wp_key.key_name
+  subnet_id              = aws_subnet.wordpress_public.id
   vpc_security_group_ids = [aws_security_group.wordpress_public.id]
 
   # Required for NAT routing
@@ -74,7 +59,7 @@ resource "aws_instance" "proxy" {
     sysctl -w net.ipv4.ip_forward=1
     echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/99-ipforward.conf
 
-    # Install iptables (Amazon Linux 2023 lacks iptables by default)
+    # Install iptables (Amazon Linux 2023 uses nftables by default)
     dnf install -y iptables-nft
 
     # Detect default outgoing network interface
@@ -95,11 +80,11 @@ resource "aws_instance" "proxy" {
 }
 
 resource "aws_instance" "web" {
-  count                = var.web_instance_count
-  ami                  = var.ami_image
-  instance_type        = var.instance_type
-  iam_instance_profile = aws_iam_instance_profile.ssm_profile.name
-  subnet_id            = aws_subnet.wordpress_private.id
+  count                  = var.web_instance_count
+  ami                    = var.ami_image
+  instance_type          = var.instance_type
+  key_name               = aws_key_pair.wp_key.key_name
+  subnet_id              = aws_subnet.wordpress_private.id
   vpc_security_group_ids = [aws_security_group.wordpress_web.id]
 
   tags = {
@@ -108,10 +93,10 @@ resource "aws_instance" "web" {
 }
 
 resource "aws_instance" "db" {
-  ami                  = var.ami_image
-  instance_type        = var.instance_type
-  iam_instance_profile = aws_iam_instance_profile.ssm_profile.name
-  subnet_id            = aws_subnet.wordpress_private.id
+  ami                    = var.ami_image
+  instance_type          = var.instance_type
+  key_name               = aws_key_pair.wp_key.key_name
+  subnet_id              = aws_subnet.wordpress_private.id
   vpc_security_group_ids = [aws_security_group.wordpress_db.id]
 
   tags = {

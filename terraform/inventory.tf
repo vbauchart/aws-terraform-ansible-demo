@@ -1,34 +1,24 @@
-# Ansible Inventory configured for AWS Systems Manager (SSM)
-# Zero SSH keys, zero open port 22, connects directly via AWS SSM API
+# Ansible Inventory configured for EC2 Instance Connect Endpoint (EICE)
+# Connects to private instances directly via AWS backbone tunnel (ProxyCommand)
 resource "local_file" "inventory" {
-  filename        = "../ansible/inventory.ini"
+  filename        = "${path.module}/../ansible/inventory.ini"
   file_permission = "0660"
   content         = <<-EOF
 [proxy]
-${aws_instance.proxy.id}
-
-[proxy:vars]
-ansible_connection = aws_ssm
-ansible_aws_ssm_region = ${var.aws_region_name}
-ansible_user = ec2-user
+${aws_instance.proxy.private_ip} instance_id=${aws_instance.proxy.id}
 
 [web]
 %{for instance in aws_instance.web~}
-${instance.id}
+${instance.private_ip} instance_id=${instance.id}
 %{endfor~}
 
-[web:vars]
-ansible_connection = aws_ssm
-ansible_aws_ssm_region = ${var.aws_region_name}
-ansible_user = ec2-user
-nfs_wp_content_ip = ${aws_efs_mount_target.private_subnet.ip_address}:/
-
 [db]
-${aws_instance.db.id}
+${aws_instance.db.private_ip} instance_id=${aws_instance.db.id}
 
-[db:vars]
-ansible_connection = aws_ssm
-ansible_aws_ssm_region = ${var.aws_region_name}
+[all:vars]
 ansible_user = ec2-user
+ansible_ssh_private_key_file = id_rsa_eice
+ansible_ssh_common_args = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="aws ec2-instance-connect open-tunnel --instance-id {{ instance_id }} --remote-port 22 --region ${var.aws_region_name}"'
+nfs_wp_content_ip = ${aws_efs_mount_target.private_subnet.ip_address}:/
 EOF
 }

@@ -11,9 +11,9 @@ variable "aws_az_name" {
 }
 
 variable "ami_image" {
-  description = "AMI ID for EC2 instances (Amazon Linux 2023 with pre-installed SSM agent in eu-west-3)"
+  description = "AMI ID for EC2 instances (Amazon Linux 2023 kernel-6.1 in eu-west-3 with EC2 Instance Connect built-in)"
   type        = string
-  default     = "ami-0c2d516f60d275525"
+  default     = "ami-0f00e1cf9df80b6ac"
 }
 
 variable "instance_type" {
