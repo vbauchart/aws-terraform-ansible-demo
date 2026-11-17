@@ -1,29 +1,34 @@
-
-# ansible inventory
+# Ansible Inventory configured for AWS Systems Manager (SSM)
+# Zero SSH keys, zero open port 22, connects directly via AWS SSM API
 resource "local_file" "inventory" {
   filename        = "../ansible/inventory.ini"
   file_permission = "0660"
-  content         = <<EOF
+  content         = <<-EOF
 [proxy]
-${aws_instance.proxy.public_ip}
+${aws_instance.proxy.id}
+
 [proxy:vars]
-ansible_user = admin
-ansible_ssh_private_key_file = ${var.ssh_key_file}
+ansible_connection = aws_ssm
+ansible_aws_ssm_region = ${var.aws_region_name}
+ansible_user = ec2-user
 
 [web]
-${aws_instance.web[0].private_ip}
-${aws_instance.web[1].private_ip}
+%{for instance in aws_instance.web~}
+${instance.id}
+%{endfor~}
+
 [web:vars]
-ansible_user = admin
-ansible_ssh_private_key_file = ${var.ssh_key_file}
-ansible_ssh_common_args='-o ProxyCommand="ssh -i ${var.ssh_key_file} -W %h:%p -q admin@${aws_instance.proxy.public_ip}"'
+ansible_connection = aws_ssm
+ansible_aws_ssm_region = ${var.aws_region_name}
+ansible_user = ec2-user
 nfs_wp_content_ip = ${aws_efs_mount_target.private_subnet.ip_address}:/
 
 [db]
-${aws_instance.db.private_ip}
+${aws_instance.db.id}
+
 [db:vars]
-ansible_user = admin
-ansible_ssh_private_key_file = ${var.ssh_key_file}
-ansible_ssh_common_args='-o ProxyCommand="ssh -i ${var.ssh_key_file} -W %h:%p -q admin@${aws_instance.proxy.public_ip}"'
+ansible_connection = aws_ssm
+ansible_aws_ssm_region = ${var.aws_region_name}
+ansible_user = ec2-user
 EOF
 }

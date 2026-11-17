@@ -8,45 +8,32 @@
   become: true
 
   tasks:
-    - name: Gather the package facts
-      ansible.builtin.package_facts:
-        manager: auto
-
-    - name: percona - install dependencies
-      apt:
+    - name: mariadb - install database server and python dependencies
+      dnf:
         name:
-          - gnupg2
+          - mariadb105-server
           - python3-pip
         state: present
-        update_cache: true
-      when: "'percona-server-server-5.7' not in ansible_facts.packages"
 
-    - name: percona - install percona repository
-      apt:
-        deb: https://repo.percona.com/apt/percona-release_latest.buster_all.deb
-      when: "'percona-release' not in ansible_facts.packages"
+    - name: mariadb - start and enable service
+      service:
+        name: mariadb
+        state: started
+        enabled: true
 
-    - name: percona - install percona server
-      apt:
-        name: percona-server-server-5.7
-        state: latest
-        update_cache: true
-      when: "'percona-server-server-5.7' not in ansible_facts.packages"
-
-    # Setup percona users
-    - name: Install bottle python package
+    - name: mariadb - install PyMySQL python package
       pip:
         name: PyMySQL
 
-    - name: percona - create database
+    - name: mariadb - create wordpress database
       mysql_db:
-        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_unix_socket: /var/lib/mysql/mysql.sock
         name: "{{ mysql_db_name }}"
         state: present
 
-    - name: percona - set remote user
+    - name: mariadb - set remote user permissions for web instances
       mysql_user:
-        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_unix_socket: /var/lib/mysql/mysql.sock
         name: "{{ mysql_user }}"
         host: "{{ item }}"
         password: "{{ mysql_password }}"
